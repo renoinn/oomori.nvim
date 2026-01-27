@@ -9,7 +9,6 @@ return {
   {
     "rebelot/heirline.nvim",
     dependencies = { "zeioth/heirline-components.nvim" },
-    -- event = "User BaseDefered",
     opts = function()
       local lib = require "heirline-components.all"
       local hl = require "heirline-components.core.hl"
