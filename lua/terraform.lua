@@ -5,31 +5,22 @@ function M.terraform_state()
 
   ---@type snacks.picker.finder.Item[]
   local items = {}
+  local result = vim.system({ "terraform", "state", "list" }, { text = true }):wait()
+  local out = vim.fn.split(result.stdout, "\n")
+  local err = vim.fn.split(result.stderr, "\n")
 
-  -- terraform state list の出力を取得
-  local handle = io.popen "terraform state list 2>/dev/null"
-  if not handle then
-    Snacks.notify("No terraform state or not in a terraform directory", "warn")
-    return
-  end
-  local result = handle:read "*a"
-  handle:close()
-
-  if result == "" then
+  if #out == 0 then
     Snacks.notify("No resources found in terraform state", "warn")
     return
   end
 
-  -- 行ごとにsplit して items を作成
-  for i, state_name in result:gmatch "[^\n]+" do
-    if state_name ~= "" then
-      table.insert(items, {
-        idx = i,
-        source = i,
-        text = state_name,
-        file = state_name,
-      })
-    end
+  for i, line in ipairs(out) do
+    table.insert(items, {
+      idx = i,
+      source = i,
+      text = line,
+      file = line,
+    })
   end
 
   if #items == 0 then
@@ -37,39 +28,41 @@ function M.terraform_state()
     return
   end
 
+  local cwd = vim.fn.getcwd()
   ---@type snacks.picker.Config
   picker.pick {
     source = "terraform",
+    cwd = cwd,
     items = items,
     format = function(item, _)
       local ret = {}
       ret[#ret + 1] = { item.text }
       return ret
     end,
-    confirm = function(the_picker, item)
-      if item then
-        the_picker:close()
-        Snacks.notify("Resource: " .. item.text, "info")
-        -- Additional actions can be added here (e.g., open file, show details)
+    confirm = function(pick, item)
+      if not item then
+        pick:close()
+        return
       end
+
+      local resource, name = string.match(item.text, "(.*)%.(.*)")
+      local pattern = string.format('%s" "%s', resource, name)
+      local g = vim.system({ "grep", "-rn", pattern, vim.fn.getcwd() }):wait()
+      local lines = vim.fn.split(g.stdout, "\n")
+
+      local path
+      local lnum
+      for _, line in ipairs(lines) do
+        path, lnum = line:match "(.*):(%d+)"
+      end
+      vim.api.nvim_command("e +" .. lnum .. " " .. path)
+      pick:close()
     end,
     preview = function(ctx)
-      if not ctx then return false end
-      -- Show resource details from state
-      local details = {}
-      table.insert(details, "Resource: " .. ctx.item.text)
-      table.insert(details, "---")
+      local function trim(s) return (s:gsub("^%s*(.-)%s*$", "%1")) end
 
-      -- Run terraform state show for the selected resource
-      local cmd = "terraform state show " .. vim.fn.shellescape(ctx.item.text) .. " 2>/dev/null"
-      local show_handle = io.popen(cmd)
-      if show_handle then
-        local show_result = show_handle:read "*a"
-        show_handle:close()
-        for line in show_result:gmatch "[^\n]+" do
-          table.insert(details, line)
-        end
-      end
+      local cmd = { "terraform", "state", "show", trim(ctx.item.text) }
+      Snacks.picker.preview.cmd(cmd, ctx)
 
       return true
     end,
