@@ -1,31 +1,54 @@
 local M = {}
 
+---@param cmd table
+---@return table: out, err
+local function run_cmd(cmd)
+  local result = vim.system(cmd, { text = true }):wait()
+  local out = vim.fn.split(result.stdout, "\n")
+  local err = vim.fn.split(result.stderr, "\n")
+  return { out = out, err = err }
+end
+
+---@param text string
+---@return table: path string, num number
+local function find_resource(text)
+  local address = vim.fn.split(text, "\\.")
+
+  local resource = address[#address - 1]
+  local name = string.gsub(address[#address], "%[.*%]", "")
+  local pattern = string.format('%s" "%s', resource, name)
+  local matches = run_cmd { "grep", "-rn", pattern, vim.fn.getcwd() }
+  if #matches.out == 0 then
+    Snacks.notify("No result in grep", "warn")
+    return {}
+  end
+
+  local path
+  local num
+  for _, line in ipairs(matches.out) do
+    path, num = line:match "(.*):(%d+)"
+  end
+  return { path = path, num = tonumber(num) }
+end
+
 function M.terraform_state()
   local picker = require "snacks.picker"
 
   ---@type snacks.picker.finder.Item[]
   local items = {}
-  local result = vim.system({ "terraform", "state", "list" }, { text = true }):wait()
-  local out = vim.fn.split(result.stdout, "\n")
-  local err = vim.fn.split(result.stderr, "\n")
+  local state = run_cmd { "terraform", "state", "list" }
 
-  if #out == 0 then
+  if #state.out == 0 then
     Snacks.notify("No resources found in terraform state", "warn")
     return
   end
 
-  for i, line in ipairs(out) do
+  for i, line in ipairs(state.out) do
     table.insert(items, {
       idx = i,
       source = i,
       text = line,
-      file = line,
     })
-  end
-
-  if #items == 0 then
-    Snacks.notify("No resources found in terraform state", "warn")
-    return
   end
 
   local cwd = vim.fn.getcwd()
@@ -44,25 +67,18 @@ function M.terraform_state()
         pick:close()
         return
       end
-
-      local resource, name = string.match(item.text, "(.*)%.(.*)")
-      local pattern = string.format('%s" "%s', resource, name)
-      local g = vim.system({ "grep", "-rn", pattern, vim.fn.getcwd() }):wait()
-      local lines = vim.fn.split(g.stdout, "\n")
-
-      local path
-      local lnum
-      for _, line in ipairs(lines) do
-        path, lnum = line:match "(.*):(%d+)"
-      end
-      vim.api.nvim_command("e +" .. lnum .. " " .. path)
       pick:close()
+
+      local res = find_resource(item.text)
+      vim.api.nvim_command("e +" .. res.num .. " " .. res.path)
     end,
     preview = function(ctx)
-      local function trim(s) return (s:gsub("^%s*(.-)%s*$", "%1")) end
+      local res = find_resource(ctx.item.text)
+      if not res.path then return false end
 
-      local cmd = { "terraform", "state", "show", trim(ctx.item.text) }
-      Snacks.picker.preview.cmd(cmd, ctx)
+      ctx.item.file = res.path
+      ctx.item.pos = { res.num, 0 }
+      Snacks.picker.preview.file(ctx)
 
       return true
     end,
