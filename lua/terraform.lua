@@ -17,7 +17,15 @@ local function find_resource(text)
   local resource = address[#address - 1]
   local name = string.gsub(address[#address], "%[.*%]", "")
   local pattern = string.format('%s" "%s', resource, name)
-  local matches = run_cmd { "grep", "-rn", pattern, vim.fn.getcwd() }
+  local matches = run_cmd {
+    "rg",
+    pattern,
+    vim.fn.getcwd(),
+    "--color=never",
+    "--with-filename",
+    "--line-number",
+    "--no-heading",
+  }
   if #matches.out == 0 then
     Snacks.notify("No result in grep", "warn")
     return {}
@@ -26,7 +34,7 @@ local function find_resource(text)
   local path
   local num
   for _, line in ipairs(matches.out) do
-    path, num = line:match "(.*):(%d+)"
+    path, num = line:match "(.*):(%d+):.*"
   end
   return { path = path, num = tonumber(num) }
 end
@@ -63,11 +71,8 @@ function M.terraform_state()
       return ret
     end,
     confirm = function(pick, item)
-      if not item then
-        pick:close()
-        return
-      end
       pick:close()
+      if not item then return end
 
       local res = find_resource(item.text)
       vim.api.nvim_command("e +" .. res.num .. " " .. res.path)
