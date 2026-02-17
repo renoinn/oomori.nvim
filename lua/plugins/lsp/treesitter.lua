@@ -47,7 +47,7 @@ return {
 
       -- Enable tree-sitter after opening a file for a target language
       local filetypes = {}
-      for _, lang in ipairs(opts.ensure_installed) do
+      for lang, _ in pairs(installed) do
         for _, ft in ipairs(vim.treesitter.language.get_filetypes(lang)) do
           table.insert(filetypes, ft)
         end
