@@ -12,8 +12,9 @@ local function run_cmd(cmd, cwd)
 end
 
 ---@param text string
+---@param cwd string?
 ---@return table: path string, num number
-local function find_resource(text)
+local function find_resource(text, cwd)
   local address = vim.fn.split(text, "\\.")
 
   local resource = address[#address - 1]
@@ -22,7 +23,7 @@ local function find_resource(text)
   local matches = run_cmd {
     "rg",
     pattern,
-    vim.fn.getcwd(),
+    cwd or vim.fn.getcwd(),
     "--color=never",
     "--with-filename",
     "--line-number",
@@ -84,11 +85,11 @@ function M.terraform_state()
       pick:close()
       if not item then return end
 
-      local res = find_resource(item.text)
+      local res = find_resource(item.text, cwd)
       vim.api.nvim_command("e +" .. res.num .. " " .. res.path)
     end,
     preview = function(ctx)
-      local res = find_resource(ctx.item.text)
+      local res = find_resource(ctx.item.text, cwd)
       if not res.path then return false end
 
       ctx.item.file = res.path
